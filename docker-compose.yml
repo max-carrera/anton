@@ -1,0 +1,27 @@
+# Deploy auf den Contabo-Server.
+# App lauscht im Container auf 3000. NPM erreicht sie über den Container-Namen
+# "antonia" im Netz nginx-reverse-proxy_default. Host-Port 8093 nur fürs Debuggen.
+services:
+  antonia:
+    build: .
+    image: antonia-dating
+    container_name: antonia
+    restart: unless-stopped
+    env_file: .env          # ADMIN_PASSWORD, SESSION_SECRET (nur am Server!)
+    environment:
+      - PORT=3000
+    ports:
+      - "8093:3000"         # Debug/Verifizierung; Domain läuft über NPM
+    volumes:
+      - antonia_uploads:/app/uploads   # hochgeladene Bewerber-Dateien
+      - antonia_data:/app/data         # SQLite-Datenbank
+    networks:
+      - nginx-reverse-proxy_default
+
+volumes:
+  antonia_uploads:
+  antonia_data:
+
+networks:
+  nginx-reverse-proxy_default:
+    external: true
