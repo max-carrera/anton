@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Antonia ♥ – Admin (Bewerbungen)</title>
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    .admin { max-width: 900px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #ffe0ec; font-size: 14px; }
+    th { color: var(--pink-dark); }
+    tr.row-click { cursor: pointer; }
+    tr.row-click:hover { background: #fff5f9; }
+    .tag { display: inline-block; padding: 2px 10px; border-radius: 999px; font-weight: 800; font-size: 12px; }
+    .tag.ok { background: #d7f7ea; color: var(--ok); }
+    .tag.bad { background: #ffe0e4; color: var(--bad); }
+    .detail dt { font-weight: 800; margin-top: 12px; color: var(--pink-dark); }
+    .detail dd { margin: 4px 0 0; }
+    .filelink { display: inline-block; margin: 4px 8px 0 0; }
+    .back-link { cursor: pointer; color: var(--pink-dark); font-weight: 700; }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="logo">Antonia<span>♥</span> Admin</div>
+    <div class="tagline" id="userbar"></div>
+  </header>
+  <main id="app" class="app admin"></main>
+
+  <script>
+    const app = document.getElementById('app');
+    const userbar = document.getElementById('userbar');
+
+    function el(tag, props = {}, ...kids) {
+      const n = document.createElement(tag);
+      for (const [k, v] of Object.entries(props)) {
+        if (k === 'class') n.className = v;
+        else if (k === 'html') n.innerHTML = v;
+        else if (k.startsWith('on') && typeof v === 'function') n.addEventListener(k.slice(2), v);
+        else if (v != null && v !== false) n.setAttribute(k, v);
+      }
+      for (const c of kids.flat()) { if (c == null || c === false) continue; n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); }
+      return n;
+    }
+
+    async function api(path, opts) {
+      const res = await fetch(path, opts);
+      if (res.status === 401) { renderLogin(); throw new Error('unauth'); }
+      return res;
+    }
+
+    function renderLogin(msg) {
+      userbar.textContent = '';
+      app.innerHTML = '';
+      const pw = el('input', { type: 'password', placeholder: 'Admin-Passwort' });
+      const go = async () => {
+        const r = await fetch('/api/admin/login', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: pw.value }),
+        });
+        if (r.ok) renderList(); else renderLogin('Falsches Passwort.');
+      };
+      pw.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+      app.appendChild(el('div', { class: 'card' },
+        el('h2', {}, 'Admin-Login'),
+        el('p', { class: 'lead' }, 'Nur für Antonia. 💖'),
+        msg ? el('p', { class: 'warn' }, msg) : null,
+        pw,
+        el('div', { class: 'actions' }, el('span', {}), el('button', { class: 'btn btn-primary', onclick: go }, 'Einloggen'))));
+      pw.focus();
+    }
+
+    async function renderList() {
+      const res = await api('/api/admin/applicants');
+      const rows = await res.json();
+      userbar.innerHTML = '';
+      const logout = el('button', { class: 'btn btn-ghost', onclick: async () => { await fetch('/api/admin/logout', { method: 'POST' }); renderLogin(); } }, 'Logout');
+      userbar.appendChild(logout);
+
+      app.innerHTML = '';
+      const card = el('div', { class: 'card' },
+        el('h2', {}, `Bewerbungen (${rows.length})`),
+        el('p', { class: 'lead' }, 'Klicke auf eine Zeile für Details und Datei-Downloads.'));
+      if (!rows.length) {
+        card.appendChild(el('p', { class: 'hint' }, 'Noch keine Bewerbungen eingegangen.'));
+      } else {
+        const table = el('table', {},
+          el('tr', {}, el('th', {}, 'Datum'), el('th', {}, 'Name'), el('th', {}, 'Status'), el('th', {}, 'Score')));
+        rows.forEach((r) => {
+          const tr = el('tr', { class: 'row-click', onclick: () => renderDetail(r.id) },
+            el('td', {}, new Date(r.created_at).toLocaleString('de-DE')),
+            el('td', {}, r.name || '—'),
+            el('td', {}, el('span', { class: `tag ${r.bestanden ? 'ok' : 'bad'}` }, r.bestanden ? 'bestanden' : 'durchgefallen')),
+            el('td', {}, String(r.score)));
+          table.appendChild(tr);
+        });
+        card.appendChild(table);
+      }
+      app.appendChild(card);
+    }
+
+    async function renderDetail(id) {
+      const res = await api('/api/admin/applicants/' + id);
+      const a = await res.json();
+      app.innerHTML = '';
+      const dl = el('dl', { class: 'detail' });
+      const add = (k, v) => { dl.appendChild(el('dt', {}, k)); dl.appendChild(el('dd', {}, v)); };
+
+      add('Status', el('span', { class: `tag ${a.bestanden ? 'ok' : 'bad'}` }, `${a.bestanden ? 'bestanden' : 'durchgefallen'} · ${a.score}/100`));
+      add('Urteil', a.verdict || '—');
+      add('Kontakt', a.contact || '—');
+      add('Hobbys', (a.hobbys || []).join(', ') || '—');
+      add('Bare Minimum', (a.bare_minimum || []).join(' · ') || '—');
+      add('Bestätigte Aussagen', (a.redflags.bestaetigt || []).join(' · ') || '—');
+      add('Angekreuzte Fallen 🚩', (a.redflags.fallen || []).join(' · ') || 'keine');
+      add('Wirklich gezahlt?', a.geld_wirklich_gezahlt ? 'JA 💸 (disqualifiziert)' : 'nein');
+      add('Rätsel', Object.entries(a.raetsel || {}).map(([k, v]) => `${k}: ${v}`).join(' · ') || '—');
+      add('Quiz-Antworten', el('div', {}, ...(a.quiz_antworten || []).map((q, i) => el('div', {}, `${i + 1}. ${q}`))));
+      add('Bewertungs-Gründe', el('div', {}, ...(a.gruende || []).map((g) => el('div', {}, '• ' + g))));
+
+      const fileWrap = el('div', {});
+      const labels = { lohnabrechnung: 'Lohnabrechnung', eltern_erklaerung: 'Eltern-Erklärung', bettwaesche: 'Bettwäsche', selfie: 'Selfie' };
+      Object.keys(labels).forEach((f) => {
+        if (a.files && a.files[f]) {
+          fileWrap.appendChild(el('a', { class: 'filelink btn btn-ghost', href: `/api/admin/file/${id}/${f}`, target: '_blank' }, '📎 ' + labels[f]));
+        }
+      });
+      add('Hochgeladene Dateien', a.files && Object.keys(a.files).length ? fileWrap : '—');
+
+      const del = el('button', { class: 'btn btn-ghost', style: 'color:var(--bad)', onclick: async () => {
+        if (!confirm('Diesen Bewerber inkl. Dateien endgültig löschen?')) return;
+        await api('/api/admin/applicants/' + id, { method: 'DELETE' });
+        renderList();
+      } }, '🗑️ Bewerber löschen');
+
+      app.appendChild(el('div', { class: 'card' },
+        el('p', { class: 'back-link', onclick: renderList }, '← zurück zur Liste'),
+        el('h2', {}, a.name || 'Unbenannt'),
+        el('p', { class: 'hint' }, 'Eingegangen: ' + new Date(a.created_at).toLocaleString('de-DE')),
+        dl,
+        el('div', { class: 'actions' }, el('span', {}), del)));
+    }
+
+    // Start: prüfen, ob bereits eingeloggt.
+    (async () => {
+      const r = await fetch('/api/admin/me');
+      const { eingeloggt } = await r.json();
+      if (eingeloggt) renderList(); else renderLogin();
+    })();
+  </script>
+</body>
+</html>
